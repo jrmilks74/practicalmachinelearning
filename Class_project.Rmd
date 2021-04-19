@@ -86,7 +86,7 @@ confusionMatrix(pred_svm, validation$classe)
 ### Combined Model
 
 ```{r, Combined}
-pred_df <- data.frame(pred_rf, pred_lda, pred_gbm, pred_svm, classe = trainer$classe)
+pred_df <- data.frame(pred_rf, pred_lda, pred_gbm, pred_svm, classe = validation$classe)
 fit_combo <- train(classe~., method = "rf", data = pred_df)
 pred_combo <- predict(fit_combo, pred_df)
 confusionMatrix(pred_combo, pred_df$classe)
