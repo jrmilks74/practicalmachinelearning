@@ -1,0 +1,123 @@
+---
+title: "Human activity prediction using accelerometer data"
+author: "Jim Milks"
+date: "4/18/2021"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(kernlab)
+```
+
+## Introduction
+The proliferation of devices like Fitbit, Apple iWatches, etc, allows us to collect large amounts of data on personal activities. Many people (including yours truly), rarely take our devices off. While much of the research in this area is focused on quantifying how much we do particular activities, there is little data quantifying how *well* we do those activities.
+
+In this analysis, I use data from the weight lifting exercise data set provided by Velloso et al. (2013) to quantify how well six volunteers lift dumbbells. The volunteers were instructed to do one set of ten repetitions for each of five different ways: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A is the proper way of lifting dumbbells, the other four are common mistakes.
+
+Each volunteer wore fitness devises on their biceps, forearms, hips, and their dumbbells during the exercise. An experienced weightlifter supervised each volunteer to ensure each lift was done according to the class they were simulating.
+
+## Data preparation
+
+I downloaded the data using the links provided.
+
+```{r data acquisition}
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+dim(training)
+dim(testing)
+```
+
+The training data set includes 19,622 observations in each of 160 columns whereas the testing data includes 20 observations in 160 columns. I then excluded variables that were mostly NA, removed metadata, and further excluded variables with little variation.
+
+```{r data cleaning}
+training <- training[ , -c(1:7)]
+training <- training[ , colMeans(is.na(training)) < 0.9]
+near_zero <- nearZeroVar(training)
+training <- training[ , -near_zero]
+dim(training)
+```
+
+I then split the training data set into trainer and validation data sets, allowing the "testing" data to be left for the Course Prediction Quiz.
+
+```{r train vs validation}
+training$classe <- as.factor(training$classe)
+inTrain <- createDataPartition(y = training$classe, p = 0.7, list = FALSE)
+trainer <- training[inTrain, ]
+validation <- training[-inTrain, ]
+```
+
+## Analysis
+
+I used the caret package to fit random forest (rf), lda, and gradient boosting machine (gbm) to the trainer data. For my final model, I am combining predictors from the individual model predictions. Cross-validation is done using 3-fold cross validation.
+
+### Random Forest
+
+```{r, Random Forest}
+fit_rf <- train(classe~., data = trainer, method = "rf", trControl = trainControl(method = "cv", number = 3, verboseIter = FALSE), prox = TRUE)
+pred_rf <- predict(fit_rf, validation)
+confusionMatrix(pred_rf, validation$classe)
+```
+
+### Linear Discriminant Analysis
+
+```{r lda}
+fit_lda <- train(classe~., data = trainer, method = "lda", trControl = trainControl(method = "cv", number = 3, verboseIter = FALSE), prox = TRUE, na.action = na.omit)
+pred_lda <- predict(fit_lda, validation)
+confusionMatrix(pred_lda, validation$classe)
+```
+
+### Gradient Boosting Machines
+```{r, gbm}
+fit_gbm <- train(classe~., data = trainer, method = "gbm", trControl = trainControl(method = "cv", number = 3, verboseIter = FALSE), verbose = FALSE, tuneLength = 5)
+pred_gbm <- predict(fit_gbm, validation)
+confusionMatrix(pred_gbm, validation$classe)
+```
+
+### Support Vector Machine
+
+```{r SVM}
+fit_svm <- train(classe~., data = trainer, method = "svmLinear", trControl = trainControl(method = "cv", number = 3, verboseIter = FALSE), verbose = FALSE, tuneLength = 5)
+pred_svm <- predict(fit_svm, validation)
+confusionMatrix(pred_svm, validation$classe)
+```
+
+### Combined Model
+
+```{r, Combined}
+pred_df <- data.frame(pred_rf, pred_lda, pred_gbm, pred_svm, classe = trainer$classe)
+fit_combo <- train(classe~., method = "rf", data = pred_df)
+pred_combo <- predict(fit_combo, pred_df)
+confusionMatrix(pred_combo, pred_df$classe)
+```
+
+### Overall accuracy and out of sample error rate
+
+| Model | Accuracy | OoS Error |
+| :---: | :------: | :-------: |
+| RF    | 0.9941   | 0.0059    |
+| LDA   | 0.6955   | 0.3045    |
+| GBM   | 0.9901   | 0.0099    |
+| SVM   | 0.7794   | 0.2206    |
+| Combo | 0.9958   | 0.0042    |
+
+The combined model gave the best predictions, with a 99.58% accuracy rate and only a 0.42% out of sample error rate.
+
+### Prediction on the testing data set
+
+Finally, I ran the Combo model on the testing data set originally set aside at the start of this analysis and printed out the resultant predictions for whether or not each participant lifted dumbbells correctly.
+
+```{r, testing prediction}
+pred_rf_final <- predict(fit_rf, testing)
+pred_lda_final <- predict(fit_lda, testing)
+pred_gbm_final <- predict(fit_gbm, testing)
+pred_svm_final <- predict(fit_svm, testing)
+pred_final_df <- data.frame(pred_rf = pred_rf_final, pred_lda = pred_lda_final, pred_gbm = pred_gbm_final, pred_svm = pred_svm_final)
+combo_pred_final <- predict(fit_combo, pred_final_df)
+combo_pred_final
+```
+
+### Literature Cited
+
+Velloso, E., A. Bulling, H. Gellersen, W. Ugulino, and H. Fuks. 2013. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
